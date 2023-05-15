@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Real-Time Collaborative Whiteboard</title>
+  <style>
+    
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --cursor-color: rgb(0, 255, 51); /* Default cursor color */
+    }
+
+    .canvas-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100%;
+    } 
+
+    canvas {
+      border: 3px solid rgb(204, 204, 204);
+      background-color: #fff;
+      /* width: 600px; /* Set the desired width */
+      /* height: 300px; /* Set the desired height */
+    }
+
+    .cursor {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background-color: rgb(0, 255, 51); /* Customize the cursor color as desired */
+      background-color: var(--cursor-color);
+      pointer-events: none;
+      z-index: 100;
+    }
+  </style>
+</head>
+<body>
+  <div class="canvas-container">
+    <canvas id="whiteboard" width="800" height="600"></canvas>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+      const socket = io.connect('http://10.5.111.81:3000'); // Replace with the actual IP address
+
+      const canvas = document.getElementById('whiteboard');
+      const context = canvas.getContext('2d');
+      const rect = canvas.getBoundingClientRect();
+
+      let isDrawing = false;
+      let prevX = 0;
+      let prevY = 0;
+      let userColor; // Define the userColor variable here
+
+      // Event listener for mouse down
+      canvas.addEventListener('mousedown', startDrawing);
+
+      // Event listener for mouse move
+      canvas.addEventListener('mousemove', draw);
+
+      // Event listener for mouse up
+      canvas.addEventListener('mouseup', stopDrawing);
+
+      // Event listener for mouse leave (to handle drawing outside the canvas)
+      canvas.addEventListener('mouseleave', stopDrawing);
+
+      function startDrawing(event) {
+          isDrawing = true;
+          [prevX, prevY] = [event.clientX - rect.left, event.clientY - rect.top];
+      }
+
+      function draw(event) {
+          if (!isDrawing) return;
+
+          const x = event.clientX - rect.left;
+          const y = event.clientY - rect.top;
+
+          // Draw a line from the previous position to the current position
+          context.beginPath();
+          context.moveTo(prevX, prevY);
+          context.lineTo(x, y);
+          context.strokeStyle = userColor; // Set the stroke color
+          context.stroke();
+
+          // Broadcast the drawing action to other connected users
+          socket.emit('draw', { prevX, prevY, x, y, color: userColor }); // Include the color property
+
+          [prevX, prevY] = [x, y];
+      }
+
+      function stopDrawing() {
+          isDrawing = false;
+      }
+
+      // Socket.IO event handler for receiving drawing actions from other users
+      socket.on('draw', ({ prevX, prevY, x, y, color }) => {
+          context.beginPath();
+          context.moveTo(prevX, prevY);
+          context.lineTo(x, y);
+          context.strokeStyle = color; // Set the stroke color
+          context.stroke();
+      });
+
+      // Socket.IO event handler for receiving the user's color from the server
+      socket.on('userColor', ({ color }) => {
+          userColor = color; // Set the user's color
+      });
+
+      // Track the cursor position
+      let cursorX = 0;
+      let cursorY = 0;
+
+      // Event listener for mouse move
+      canvas.addEventListener('mousemove', (event) => {
+          if (!isDrawing) return;
+
+          const x = event.clientX - rect.left;
+          const y = event.clientY - rect.top;
+
+          // Draw a line from the previous position to the current position
+          context.beginPath();
+          context.moveTo(prevX, prevY);
+          context.lineTo(x, y);
+          context.strokeStyle = userColor; // Set the stroke color
+          context.stroke();
+
+          // Broadcast the drawing action to other connected users
+          socket.emit('draw', { prevX, prevY, x, y, color: userColor }); // Include the color property
+
+          [prevX, prevY] = [x, y];
+        });
+
+// Socket.IO event handler for receiving cursor positions
+socket.on('cursorMove', (data) => {
+    const { userId, position } = data;
+
+    // Create or update a cursor element for the user
+    let cursor = document.getElementById(userId);
+    if (!cursor) {
+        cursor = document.createElement('div');
+        cursor.id = userId;
+        cursor.classList.add('cursor');
+        document.body.appendChild(cursor);
+    }
+
+    // Calculate the relative position within the canvas
+    const canvasX = position.x - rect.left;
+    const canvasY = position.y - rect.top;
+
+    // Position the cursor element at the calculated position
+    cursor.style.left = `${canvasX}px`;
+    cursor.style.top = `${canvasY}px`;
+
+    // If the user is currently drawing, adjust the drawing coordinates
+    if (isDrawing) {
+        const canvasRect = canvas.getBoundingClientRect();
+        const drawX = (canvasX / canvasRect.width) * canvas.width;
+        const drawY = (canvasY / canvasRect.height) * canvas.height;
+
+        // Draw a line from the previous position to the adjusted position
+        context.beginPath();
+        context.moveTo(prevX, prevY);
+        context.lineTo(drawX, drawY);
+        context.strokeStyle = userColor; // Set the stroke color
+        context.stroke();
+
+        // Broadcast the adjusted drawing action to other connected users
+        socket.emit('draw', { prevX, prevY, x: drawX, y: drawY, color: userColor }); // Include the color property
+
+        [prevX, prevY] = [drawX, drawY];
+    }
+});
+</script>
+
+</body>
+</html>
